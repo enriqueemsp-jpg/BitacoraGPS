@@ -5,8 +5,7 @@
     <application
         android:allowBackup="true"
         android:label="Bitácora GPS"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:usesCleartextTraffic="false">
+        android:theme="@style/AppTheme">
 
         <activity
             android:name=".MainActivity"
@@ -20,5 +19,7 @@
         </activity>
 
     </application>
+
 </manifest>
+
 
