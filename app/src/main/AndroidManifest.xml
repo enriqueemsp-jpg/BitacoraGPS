@@ -23,6 +23,12 @@
 
         </activity>
 
+        <service
+            android:name=".GpsTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
     </application>
 
 </manifest>
+
