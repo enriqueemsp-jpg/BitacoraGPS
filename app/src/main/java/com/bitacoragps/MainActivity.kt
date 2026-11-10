@@ -1,114 +1,171 @@
 
 package com.bitacoragps
 
+import android.Manifest
 import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
-import android.view.View
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Button
 
 class MainActivity : Activity() {
 
     private lateinit var estado: TextView
     private lateinit var distancia: TextView
-    private var iniciado = false
+    private lateinit var ubicacion: TextView
 
     private val azul = Color.rgb(13, 71, 161)
-    private val fondo = Color.rgb(244, 246, 250)
+    private val handler = Handler(Looper.getMainLooper())
+
+    private val actualizar = object : Runnable {
+        override fun run() {
+            actualizarDatos()
+            handler.postDelayed(this, 5000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val principal = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(fondo)
+            setPadding(24, 30, 24, 24)
+            setBackgroundColor(Color.rgb(245, 247, 250))
         }
 
-        val encabezado = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(30), dp(24), dp(30))
-            setBackgroundColor(azul)
-        }
+        val titulo = crearTexto("BITÁCORA GPS", 28f, azul, true)
+        titulo.gravity = Gravity.CENTER
+        principal.addView(titulo)
 
-        encabezado.addView(texto("BITÁCORA GPS", 28f, Color.WHITE, true))
-        encabezado.addView(texto("CONTROL VEHICULAR", 14f, Color.WHITE, false))
+        val subtitulo = crearTexto("CONTROL VEHICULAR", 14f, Color.GRAY, true)
+        subtitulo.gravity = Gravity.CENTER
+        principal.addView(subtitulo)
 
-        principal.addView(encabezado)
+        estado = crearTexto("Vehículo detenido", 19f, Color.RED, true)
+        estado.setPadding(0, 35, 0, 20)
+        principal.addView(estado)
 
-        val contenido = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(24))
-        }
+        val etiqueta = crearTexto("DISTANCIA RECORRIDA", 14f, Color.GRAY, true)
+        principal.addView(etiqueta)
 
-        val tarjetaEstado = tarjeta()
-        tarjetaEstado.addView(texto("ESTADO DEL VEHÍCULO", 13f, Color.GRAY, true))
+        distancia = crearTexto("0.00 km", 38f, azul, true)
+        principal.addView(distancia)
 
-        estado = texto("● Vehículo detenido", 20f, Color.rgb(198, 40, 40), true)
-        tarjetaEstado.addView(estado)
-
-        contenido.addView(tarjetaEstado)
-
-        val tarjetaDistancia = tarjeta()
-        tarjetaDistancia.addView(texto("DISTANCIA DEL RECORRIDO", 13f, Color.GRAY, true))
-
-        distancia = texto("0.00 km", 36f, azul, true)
-        tarjetaDistancia.addView(distancia)
-
-        contenido.addView(tarjetaDistancia)
-
-        val iniciar = boton("INICIAR RECORRIDO", azul)
+        val iniciar = crearBoton("INICIAR RECORRIDO", azul)
         iniciar.setOnClickListener {
-            iniciado = true
-            estado.text = "● Recorrido iniciado"
-            estado.setTextColor(Color.rgb(46, 125, 50))
+            solicitarPermisos()
         }
+        principal.addView(iniciar)
 
-        val finalizar = boton("FINALIZAR RECORRIDO", Color.rgb(198, 40, 40))
+        val finalizar = crearBoton("FINALIZAR RECORRIDO", Color.rgb(198, 40, 40))
         finalizar.setOnClickListener {
-            iniciado = false
-            estado.text = "● Vehículo detenido"
-            estado.setTextColor(Color.rgb(198, 40, 40))
+            val intent = Intent(this, GpsTrackingService::class.java)
+            intent.action = GpsTrackingService.ACTION_STOP
+            startService(intent)
+            estado.text = "Vehículo detenido"
+            estado.setTextColor(Color.RED)
         }
+        principal.addView(finalizar)
 
-        contenido.addView(iniciar)
-        contenido.addView(finalizar)
+        ubicacion = crearTexto("Ubicación pendiente", 14f, Color.DKGRAY, false)
+        ubicacion.setPadding(0, 25, 0, 10)
+        principal.addView(ubicacion)
 
-        val ubicacion = boton("MI UBICACIÓN", Color.rgb(55, 71, 79))
-        ubicacion.setOnClickListener {
-            estado.text = "Ubicación GPS pendiente de activar"
-            estado.setTextColor(Color.DKGRAY)
-        }
-        contenido.addView(ubicacion)
-
-        val historial = tarjeta()
-        historial.addView(texto("HISTORIAL DE RECORRIDOS", 16f, azul, true))
-        historial.addView(texto("Aquí aparecerán tus recorridos guardados.", 14f, Color.DKGRAY, false))
-        contenido.addView(historial)
-
-        contenido.addView(texto(
-            "BitácoraGPS v1.0",
-            12f,
-            Color.GRAY,
-            false
-        ).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(18), 0, 0)
-        })
+        val historial = crearTexto(
+            "HISTORIAL DE RECORRIDOS\nPróximamente",
+            15f, Color.GRAY, false
+        )
+        historial.setPadding(0, 35, 0, 0)
+        principal.addView(historial)
 
         val scroll = ScrollView(this)
-        scroll.addView(contenido)
-        principal.addView(scroll)
+        scroll.addView(principal)
+        setContentView(scroll)
 
-        setContentView(principal)
+        handler.post(actualizar)
     }
 
-    private fun texto(
+    private fun solicitarPermisos() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            val permisos = mutableListOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+
+            if (Build.VERSION.SDK_INT >= 33) {
+                permisos.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+
+            requestPermissions(permisos.toTypedArray(), 100)
+        } else {
+            iniciarGPS()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == 100) {
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+            ) {
+                iniciarGPS()
+            } else {
+                estado.text = "Permiso GPS necesario"
+                estado.setTextColor(Color.RED)
+            }
+        }
+    }
+
+    private fun iniciarGPS() {
+        val intent = Intent(this, GpsTrackingService::class.java)
+        intent.action = GpsTrackingService.ACTION_START
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+
+            estado.text = "Recorrido en seguimiento"
+            estado.setTextColor(Color.rgb(46, 125, 50))
+        } catch (e: Exception) {
+            estado.text = "No se pudo iniciar el GPS"
+            estado.setTextColor(Color.RED)
+        }
+    }
+
+    private fun actualizarDatos() {
+        val datos = getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
+
+        val metros = datos.getFloat("distancia_metros", 0f)
+        val lat = datos.getFloat("latitud", 0f)
+        val lon = datos.getFloat("longitud", 0f)
+
+        distancia.text = String.format("%.2f km", metros / 1000f)
+
+        if (lat != 0f || lon != 0f) {
+            ubicacion.text = "Latitud: $lat\nLongitud: $lon"
+        }
+    }
+
+    private fun crearTexto(
         contenido: String,
         tamano: Float,
         color: Int,
@@ -119,46 +176,31 @@ class MainActivity : Activity() {
             textSize = tamano
             setTextColor(color)
             if (negrita) setTypeface(null, Typeface.BOLD)
-            setPadding(0, dp(6), 0, dp(6))
         }
     }
 
-    private fun tarjeta(): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(16))
-            background = GradientDrawable().apply {
-                setColor(Color.WHITE)
-                cornerRadius = dp(14).toFloat()
-            }
-            elevation = dp(3).toFloat()
-            val parametros = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            parametros.bottomMargin = dp(16)
-            layoutParams = parametros
-        }
-    }
-
-    private fun boton(titulo: String, color: Int): Button {
+    private fun crearBoton(texto: String, color: Int): Button {
         return Button(this).apply {
-            text = titulo
-            setTextColor(Color.WHITE)
+            text = texto
             textSize = 14f
+            setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(color)
+            backgroundTintList =
+                android.content.res.ColorStateList.valueOf(color)
+
             val parametros = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(58)
+                65
             )
-            parametros.bottomMargin = dp(12)
+            parametros.topMargin = 12
             layoutParams = parametros
         }
     }
 
-    private fun dp(valor: Int): Int {
-        return (valor * resources.displayMetrics.density).toInt()
+    override fun onDestroy() {
+        handler.removeCallbacks(actualizar)
+        super.onDestroy()
     }
 }
+
 
