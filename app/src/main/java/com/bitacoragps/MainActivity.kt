@@ -179,23 +179,32 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun crearBoton(texto: String, color: Int): Button {
-        return Button(this).apply {
-            text = texto
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setTypeface(null, Typeface.BOLD)
-            backgroundTintList =
-                android.content.res.ColorStateList.valueOf(color)
+   
+private fun crearBoton(texto: String, color: Int): Button {
+    val densidad = resources.displayMetrics.density
+    val alto = (56 * densidad).toInt()
+    val margen = (12 * densidad).toInt()
 
-            val parametros = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                65
-            )
-            parametros.topMargin = 12
-            layoutParams = parametros
+    return Button(this).apply {
+        text = texto
+        textSize = 14f
+        setTextColor(Color.WHITE)
+        setTypeface(null, Typeface.BOLD)
+
+        backgroundTintList =
+            android.content.res.ColorStateList.valueOf(color)
+
+        minHeight = alto
+        minimumHeight = alto
+
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            alto
+        ).apply {
+            topMargin = margen
         }
     }
+}
 
     override fun onDestroy() {
         handler.removeCallbacks(actualizar)
