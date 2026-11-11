@@ -1,11 +1,6 @@
-
 package com.bitacoragps
 
-import org.json.JSONArray
-import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Localeimport android.app.Service
+import android.app.Service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -20,6 +15,11 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
 
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 class GpsTrackingService : Service(), LocationListener {
 
     companion object {
