@@ -34,7 +34,9 @@ class GpsTrackingService : Service(), LocationListener {
     private lateinit var locationManager: LocationManager
     private var ultimaUbicacion: Location? = null
     private var distanciaMetros = 0f
-
+    private var inicioRecorrido = 0L
+    private var ubicacionInicial = ""
+    
     override fun onCreate() {
         super.onCreate()
         locationManager =
@@ -69,6 +71,17 @@ class GpsTrackingService : Service(), LocationListener {
             return
         }
 
+        inicioRecorrido = System.currentTimeMillis()
+distanciaMetros = 0f
+ultimaUbicacion = null
+ubicacionInicial = "Pendiente"
+
+getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
+    .edit()
+    .putFloat("distancia_metros", 0f)
+    .putFloat("latitud", 0f)
+    .putFloat("longitud", 0f)
+    .apply()
         crearNotificacion()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -102,6 +115,10 @@ class GpsTrackingService : Service(), LocationListener {
         }
 
         if (location.accuracy <= 50f) {
+            if (ubicacionInicial == "Pendiente") {
+    ubicacionInicial =
+        "${location.latitude}, ${location.longitude}"
+}
             ultimaUbicacion = location
 
             getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
