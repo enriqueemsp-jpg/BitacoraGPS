@@ -130,7 +130,44 @@ getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
         }
     }
 
+    private fun guardarRecorrido() {
+    if (inicioRecorrido == 0L) return
+
+    val datos = getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
+
+    val historialTexto = datos.getString("historial_recorridos", "[]")
+        ?: "[]"
+
+    val historial = JSONArray(historialTexto)
+
+    val formato = SimpleDateFormat(
+        "dd/MM/yyyy HH:mm",
+        Locale.getDefault()
+    )
+
+    val recorrido = JSONObject().apply {
+        put("fechaInicio", formato.format(Date(inicioRecorrido)))
+        put("fechaFin", formato.format(Date()))
+        put("kilometros", distanciaMetros / 1000f)
+        put("ubicacionInicial", ubicacionInicial)
+        put(
+            "ubicacionFinal",
+            "${datos.getFloat("latitud", 0f)}, ${datos.getFloat("longitud", 0f)}"
+        )
+    }
+
+    historial.put(recorrido)
+
+    datos.edit()
+        .putString("historial_recorridos", historial.toString())
+        .apply()
+
+    inicioRecorrido = 0L
+}
+    
     private fun detenerSeguimiento() {
+        guardarRecorrido()
+        
         try {
             locationManager.removeUpdates(this)
         } catch (_: SecurityException) {
