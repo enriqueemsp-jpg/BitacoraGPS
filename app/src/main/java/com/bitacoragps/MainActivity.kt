@@ -3,6 +3,7 @@ package com.bitacoragps
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -11,11 +12,14 @@ import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.InputType
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Button
+import android.widget.EditText
+import android.widget.Toast
 import org.json.JSONArray
 import java.util.Locale
 
@@ -25,6 +29,7 @@ class MainActivity : Activity() {
     private lateinit var distancia: TextView
     private lateinit var ubicacion: TextView
     private lateinit var historialContainer: LinearLayout
+    private lateinit var kilometrajeActual: TextView
 
     private val azul = Color.rgb(13, 71, 161)
     private val handler = Handler(Looper.getMainLooper())
@@ -65,6 +70,36 @@ class MainActivity : Activity() {
 
         distancia = crearTexto("0.00 km", 38f, azul, true)
         principal.addView(distancia)
+
+        // MÓDULO DE KILOMETRAJE DE LA UNIDAD
+
+        val tituloKm = crearTexto(
+            "KILOMETRAJE DE LA UNIDAD",
+            18f,
+            azul,
+            true
+        )
+        tituloKm.setPadding(0, 30, 0, 8)
+        principal.addView(tituloKm)
+
+        kilometrajeActual = crearTexto(
+            "Configura el kilometraje inicial",
+            26f,
+            Color.rgb(46, 125, 50),
+            true
+        )
+        principal.addView(kilometrajeActual)
+
+        val configurarKm = crearBoton(
+            "CONFIGURAR KILOMETRAJE INICIAL",
+            Color.rgb(46, 125, 50)
+        )
+        configurarKm.setOnClickListener {
+            mostrarConfiguracionKilometraje()
+        }
+        principal.addView(configurarKm)
+
+        // BOTONES DE RECORRIDO
 
         val iniciar = crearBoton("INICIAR RECORRIDO", azul)
         iniciar.setOnClickListener {
@@ -112,6 +147,155 @@ class MainActivity : Activity() {
 
         actualizarDatos()
         handler.post(actualizar)
+    }
+
+    private fun mostrarConfiguracionKilometraje() {
+
+        val datos = getSharedPreferences(
+            "BitacoraGPS", MODE_PRIVATE
+        )
+
+        val actual = datos.getString("kilometraje_base", "")
+
+        val entrada = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL
+            hint = "Ejemplo: 125450"
+            setSingleLine(true)
+            setText(actual)
+        }
+
+        val contenedor = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 10, 50, 0)
+            addView(entrada)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Kilometraje inicial de la unidad")
+            .setMessage(
+                "Ingresa el kilometraje que marca actualmente " +
+                        "el tablero del vehículo."
+            )
+            .setView(contenedor)
+            .setPositiveButton("GUARDAR", null)
+            .setNegativeButton("CANCELAR", null)
+            .create()
+            .also { dialog ->
+
+                dialog.setOnShowListener {
+                    dialog.getButton(
+                        AlertDialog.BUTTON_POSITIVE
+                    ).setOnClickListener {
+
+                        val valor = entrada.text.toString()
+                            .trim()
+                            .replace(",", ".")
+                            .toDoubleOrNull()
+
+                        if (valor == null || !valor.isFinite() ||
+                            valor < 0) {
+
+                            entrada.error =
+                                "Ingresa un kilometraje válido"
+                            return@setOnClickListener
+                        }
+
+                        // Guardamos el kilometraje inicial.
+                        // Los recorridos anteriores quedan excluidos.
+
+                        val historialTexto = datos.getString(
+                            "historial_recorridos", "[]"
+                        ) ?: "[]"
+
+                        val cantidadActual = try {
+                            JSONArray(historialTexto).length()
+                        } catch (e: Exception) {
+                            0
+                        }
+
+                        datos.edit()
+                            .putString(
+                                "kilometraje_base",
+                                valor.toString()
+                            )
+                            .putInt(
+                                "kilometraje_base_historial_count",
+                                cantidadActual
+                            )
+                            .putBoolean(
+                                "kilometraje_configurado",
+                                true
+                            )
+                            .apply()
+
+                        actualizarKilometraje()
+
+                        Toast.makeText(
+                            this,
+                            "Kilometraje inicial guardado",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        dialog.dismiss()
+                    }
+                }
+
+                dialog.show()
+            }
+    }
+
+    private fun actualizarKilometraje() {
+
+        val datos = getSharedPreferences(
+            "BitacoraGPS", MODE_PRIVATE
+        )
+
+        if (!datos.getBoolean(
+                "kilometraje_configurado", false
+            )) {
+            kilometrajeActual.text =
+                "Configura el kilometraje inicial"
+            return
+        }
+
+        val base = datos.getString(
+            "kilometraje_base", "0"
+        )?.toDoubleOrNull() ?: 0.0
+
+        val cantidadInicial = datos.getInt(
+            "kilometraje_base_historial_count", 0
+        )
+
+        val historialTexto = datos.getString(
+            "historial_recorridos", "[]"
+        ) ?: "[]"
+
+        try {
+            val historial = JSONArray(historialTexto)
+
+            var kilometrosNuevos = 0.0
+
+            for (i in cantidadInicial until historial.length()) {
+                val recorrido = historial.getJSONObject(i)
+
+                kilometrosNuevos += recorrido.optDouble(
+                    "kilometros", 0.0
+                )
+            }
+
+            val total = base + kilometrosNuevos
+
+            kilometrajeActual.text = String.format(
+                Locale.getDefault(),
+                "%,.2f km",
+                total
+            )
+
+        } catch (e: Exception) {
+            kilometrajeActual.text =
+                "Error al calcular kilometraje"
+        }
     }
 
     private fun solicitarPermisos() {
@@ -196,6 +380,7 @@ class MainActivity : Activity() {
         }
 
         cargarHistorial()
+        actualizarKilometraje()
     }
 
     private fun cargarHistorial() {
