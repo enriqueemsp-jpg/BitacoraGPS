@@ -41,6 +41,9 @@ class GpsTrackingService : Service(), LocationListener {
     private var inicioRecorrido = 0L
     private var ubicacionInicial = ""
 
+    // MOTIVO DEL RECORRIDO
+    private var motivoRecorrido = "Sin motivo registrado"
+
     override fun onCreate() {
         super.onCreate()
         locationManager =
@@ -75,13 +78,21 @@ class GpsTrackingService : Service(), LocationListener {
             return
         }
 
+        // RECUPERAR EL MOTIVO ELEGIDO EN LA PANTALLA
+
+        val datos = getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
+
+        motivoRecorrido = datos.getString(
+            "motivo_actual",
+            "Sin motivo registrado"
+        ) ?: "Sin motivo registrado"
+
         inicioRecorrido = System.currentTimeMillis()
         distanciaMetros = 0f
         ultimaUbicacion = null
         ubicacionInicial = "Pendiente"
 
-        getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
-            .edit()
+        datos.edit()
             .putFloat("distancia_metros", 0f)
             .putFloat("latitud", 0f)
             .putFloat("longitud", 0f)
@@ -136,6 +147,8 @@ class GpsTrackingService : Service(), LocationListener {
         }
     }
 
+    // GUARDAR RECORRIDO CON SU MOTIVO
+
     private fun guardarRecorrido() {
         if (inicioRecorrido == 0L) return
 
@@ -160,12 +173,16 @@ class GpsTrackingService : Service(), LocationListener {
                 "ubicacionFinal",
                 "${datos.getFloat("latitud", 0f)}, ${datos.getFloat("longitud", 0f)}"
             )
+
+            // MOTIVO DEL VIAJE
+            put("motivo", motivoRecorrido)
         }
 
         historial.put(recorrido)
 
         datos.edit()
             .putString("historial_recorridos", historial.toString())
+            .remove("motivo_actual")
             .apply()
 
         inicioRecorrido = 0L
@@ -226,5 +243,3 @@ class GpsTrackingService : Service(), LocationListener {
         extras: Bundle?
     ) {}
 }
-
-
