@@ -113,7 +113,7 @@ class MainActivity : Activity() {
 
         val iniciar = crearBoton("INICIAR RECORRIDO", azul)
         iniciar.setOnClickListener {
-            solicitarPermisos()
+            mostrarSelectorMotivo()
         }
         principal.addView(iniciar)
 
@@ -170,6 +170,84 @@ class MainActivity : Activity() {
 
         actualizarDatos()
         handler.post(actualizar)
+    }
+
+    // ELEGIR MOTIVO DEL RECORRIDO
+
+    private fun mostrarSelectorMotivo() {
+
+        val motivos = arrayOf(
+            "Trabajo",
+            "Personal",
+            "Visita a cliente",
+            "Trámite",
+            "Compras",
+            "Otro"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("¿Cuál es el motivo del recorrido?")
+            .setItems(motivos) { _, seleccion ->
+
+                if (motivos[seleccion] == "Otro") {
+                    mostrarOtroMotivo()
+                } else {
+                    guardarMotivoEIniciar(motivos[seleccion])
+                }
+            }
+            .setNegativeButton("CANCELAR", null)
+            .show()
+    }
+
+    // ESCRIBIR OTRO MOTIVO
+
+    private fun mostrarOtroMotivo() {
+
+        val entrada = EditText(this).apply {
+            hint = "Ejemplo: visita familiar"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or
+                    InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        }
+
+        val contenedor = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(50, 10, 50, 0)
+            addView(entrada)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Motivo del recorrido")
+            .setView(contenedor)
+            .setPositiveButton("CONTINUAR") { _, _ ->
+
+                val motivo = entrada.text.toString().trim()
+
+                if (motivo.isEmpty()) {
+                    Toast.makeText(
+                        this,
+                        "Escribe el motivo del recorrido",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@setPositiveButton
+                }
+
+                guardarMotivoEIniciar(motivo)
+            }
+            .setNegativeButton("CANCELAR", null)
+            .show()
+    }
+
+    // GUARDAR MOTIVO Y SOLICITAR GPS
+
+    private fun guardarMotivoEIniciar(motivo: String) {
+
+        getSharedPreferences("BitacoraGPS", MODE_PRIVATE)
+            .edit()
+            .putString("motivo_actual", motivo)
+            .apply()
+
+        solicitarPermisos()
     }
 
     // CONFIGURAR KILOMETRAJE INICIAL
@@ -455,6 +533,10 @@ class MainActivity : Activity() {
                     "kilometros", 0.0
                 )
 
+                val motivo = recorrido.optString(
+                    "motivo", "Sin motivo registrado"
+                )
+
                 val tarjeta = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(18, 16, 18, 16)
@@ -468,6 +550,15 @@ class MainActivity : Activity() {
                     true
                 )
                 tarjeta.addView(numero)
+
+                val etiquetaMotivo = crearTexto(
+                    motivo,
+                    18f,
+                    Color.rgb(0, 121, 107),
+                    true
+                )
+                etiquetaMotivo.setPadding(0, 8, 0, 4)
+                tarjeta.addView(etiquetaMotivo)
 
                 val fecha = crearTexto(
                     "Inicio: $inicio\nFinalización: $fin",
@@ -588,9 +679,6 @@ class MainActivity : Activity() {
         return bytes
     }
 
-    // LEER HISTORIAL DEL XML
-
-
     // LEER HISTORIAL DEL XML SIN FALLAR POR CARACTERES ESPECIALES
 
     private fun leerHistorialXml(bytes: ByteArray): JSONArray {
@@ -670,7 +758,6 @@ class MainActivity : Activity() {
 
         return resultado
     }
-
 
     // IDENTIFICAR RECORRIDOS REPETIDOS
 
