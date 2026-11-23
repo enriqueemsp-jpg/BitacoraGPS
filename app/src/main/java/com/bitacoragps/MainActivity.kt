@@ -13,6 +13,7 @@ import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.InputType
+import android.util.Xml
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -20,8 +21,15 @@ import android.widget.TextView
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
+
 import org.json.JSONArray
+import org.json.JSONObject
+import org.xmlpull.v1.XmlPullParser
+
 import java.util.Locale
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipInputStream
 
 class MainActivity : Activity() {
 
@@ -34,6 +42,8 @@ class MainActivity : Activity() {
     private val azul = Color.rgb(13, 71, 161)
     private val handler = Handler(Looper.getMainLooper())
     private var ultimoHistorial = ""
+
+    private val SOLICITUD_RESPALDO = 200
 
     private val actualizar = object : Runnable {
         override fun run() {
@@ -136,6 +146,19 @@ class MainActivity : Activity() {
         tituloHistorial.setPadding(0, 35, 0, 15)
         principal.addView(tituloHistorial)
 
+        // BOTÓN PARA RECUPERAR HISTORIAL
+
+        val importarHistorial = crearBoton(
+            "IMPORTAR HISTORIAL RECUPERADO",
+            Color.rgb(0, 121, 107)
+        )
+
+        importarHistorial.setOnClickListener {
+            seleccionarRespaldo()
+        }
+
+        principal.addView(importarHistorial)
+
         historialContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -148,6 +171,8 @@ class MainActivity : Activity() {
         actualizarDatos()
         handler.post(actualizar)
     }
+
+    // CONFIGURAR KILOMETRAJE INICIAL
 
     private fun mostrarConfiguracionKilometraje() {
 
@@ -201,9 +226,6 @@ class MainActivity : Activity() {
                             return@setOnClickListener
                         }
 
-                        // Guardamos el kilometraje inicial.
-                        // Los recorridos anteriores quedan excluidos.
-
                         val historialTexto = datos.getString(
                             "historial_recorridos", "[]"
                         ) ?: "[]"
@@ -244,6 +266,8 @@ class MainActivity : Activity() {
                 dialog.show()
             }
     }
+
+    // ACTUALIZAR KILOMETRAJE ACUMULADO
 
     private fun actualizarKilometraje() {
 
@@ -297,6 +321,8 @@ class MainActivity : Activity() {
                 "Error al calcular kilometraje"
         }
     }
+
+    // PERMISOS GPS
 
     private fun solicitarPermisos() {
         if (checkSelfPermission(
@@ -360,6 +386,8 @@ class MainActivity : Activity() {
         }
     }
 
+    // ACTUALIZAR INFORMACIÓN DE PANTALLA
+
     private fun actualizarDatos() {
         val datos = getSharedPreferences(
             "BitacoraGPS", MODE_PRIVATE
@@ -382,6 +410,8 @@ class MainActivity : Activity() {
         cargarHistorial()
         actualizarKilometraje()
     }
+
+    // MOSTRAR HISTORIAL
 
     private fun cargarHistorial() {
         val datos = getSharedPreferences(
@@ -483,6 +513,219 @@ class MainActivity : Activity() {
         }
     }
 
+    // SELECCIONAR RESPALDO
+
+    private fun seleccionarRespaldo() {
+
+        val selector = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+
+        startActivityForResult(selector, SOLICITUD_RESPALDO)
+    }
+
+    // RECIBIR ARCHIVO SELECCIONADO
+
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == SOLICITUD_RESPALDO &&
+            resultCode == RESULT_OK
+        ) {
+            val uri = data?.data ?: return
+
+            try {
+                val bytes = contentResolver.openInputStream(uri)?.use {
+                    it.readBytes()
+                } ?: throw Exception("No se pudo abrir el respaldo")
+
+                val xmlBytes = extraerXmlRespaldo(bytes)
+                val historialRecuperado = leerHistorialXml(xmlBytes)
+
+                importarRecorridos(historialRecuperado)
+
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this,
+                    "Error al recuperar: ${e.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    // EXTRAER XML DEL ARCHIVO ZIP
+
+    private fun extraerXmlRespaldo(bytes: ByteArray): ByteArray {
+
+        if (bytes.size >= 2 &&
+            bytes[0] == 'P'.code.toByte() &&
+            bytes[1] == 'K'.code.toByte()
+        ) {
+            ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
+
+                while (true) {
+                    val entrada = zip.nextEntry ?: break
+
+                    if (entrada.name.endsWith("sp/BitacoraGPS.xml") ||
+                        entrada.name.endsWith("BitacoraGPS.xml")
+                    ) {
+                        val salida = ByteArrayOutputStream()
+                        zip.copyTo(salida)
+                        return salida.toByteArray()
+                    }
+                }
+            }
+
+            throw Exception("No se encontró BitacoraGPS.xml")
+        }
+
+        return bytes
+    }
+
+    // LEER HISTORIAL DEL XML
+
+    private fun leerHistorialXml(bytes: ByteArray): JSONArray {
+
+        val parser = Xml.newPullParser()
+        parser.setInput(ByteArrayInputStream(bytes), "UTF-8")
+
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+
+            if (parser.eventType == XmlPullParser.START_TAG &&
+                parser.name == "string" &&
+                parser.getAttributeValue(null, "name") ==
+                "historial_recorridos"
+            ) {
+                return JSONArray(parser.nextText())
+            }
+        }
+
+        throw Exception("No se encontró el historial en el XML")
+    }
+
+    // IDENTIFICAR RECORRIDOS REPETIDOS
+
+    private fun claveRecorrido(objeto: JSONObject): String {
+
+        return listOf(
+            objeto.optString("fechaInicio"),
+            objeto.optString("fechaFin"),
+            String.format(
+                Locale.US,
+                "%.5f",
+                objeto.optDouble("kilometros", 0.0)
+            ),
+            objeto.optString("ubicacionInicial"),
+            objeto.optString("ubicacionFinal")
+        ).joinToString("|")
+    }
+
+    // IMPORTAR Y COMBINAR HISTORIALES
+
+    private fun importarRecorridos(recuperados: JSONArray) {
+
+        val datos = getSharedPreferences(
+            "BitacoraGPS", MODE_PRIVATE
+        )
+
+        val actuales = JSONArray(
+            datos.getString("historial_recorridos", "[]") ?: "[]"
+        )
+
+        val combinado = JSONArray()
+        val claves = mutableSetOf<String>()
+
+        var nuevos = 0
+
+        // Primero incorporamos los recorridos del respaldo.
+
+        for (i in 0 until recuperados.length()) {
+
+            val recorrido = recuperados.getJSONObject(i)
+            val clave = claveRecorrido(recorrido)
+
+            if (claves.add(clave)) {
+                combinado.put(recorrido)
+
+                var existe = false
+
+                for (j in 0 until actuales.length()) {
+                    if (claveRecorrido(
+                            actuales.getJSONObject(j)
+                        ) == clave
+                    ) {
+                        existe = true
+                        break
+                    }
+                }
+
+                if (!existe) nuevos++
+            }
+        }
+
+        // Después conservamos los recorridos actuales.
+
+        for (i in 0 until actuales.length()) {
+
+            val recorrido = actuales.getJSONObject(i)
+            val clave = claveRecorrido(recorrido)
+
+            if (claves.add(clave)) {
+                combinado.put(recorrido)
+            }
+        }
+
+        if (nuevos == 0) {
+            Toast.makeText(
+                this,
+                "El respaldo no contiene recorridos nuevos",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val editor = datos.edit()
+
+        editor.putString(
+            "historial_recorridos",
+            combinado.toString()
+        )
+
+        // Mantener fuera del cálculo los recorridos históricos.
+
+        if (datos.getBoolean("kilometraje_configurado", false)) {
+
+            val base = datos.getInt(
+                "kilometraje_base_historial_count", 0
+            )
+
+            editor.putInt(
+                "kilometraje_base_historial_count",
+                base + nuevos
+            )
+        }
+
+        editor.apply()
+
+        ultimoHistorial = ""
+        cargarHistorial()
+        actualizarKilometraje()
+
+        Toast.makeText(
+            this,
+            "$nuevos recorridos recuperados correctamente",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    // CREAR TEXTOS
+
     private fun crearTexto(
         contenido: String,
         tamano: Float,
@@ -498,6 +741,8 @@ class MainActivity : Activity() {
             }
         }
     }
+
+    // CREAR BOTONES
 
     private fun crearBoton(
         texto: String,
