@@ -590,24 +590,87 @@ class MainActivity : Activity() {
 
     // LEER HISTORIAL DEL XML
 
+
+    // LEER HISTORIAL DEL XML SIN FALLAR POR CARACTERES ESPECIALES
+
     private fun leerHistorialXml(bytes: ByteArray): JSONArray {
 
-        val parser = Xml.newPullParser()
-        parser.setInput(ByteArrayInputStream(bytes), "UTF-8")
+        val xml = String(bytes, Charsets.UTF_8)
+            .removePrefix("\uFEFF")
 
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        val etiqueta = Regex(
+            """<string\b[^>]*\bname\s*=\s*["']historial_recorridos["'][^>]*>""",
+            RegexOption.IGNORE_CASE
+        ).find(xml) ?: throw Exception(
+            "No se encontró historial_recorridos en el XML"
+        )
 
-            if (parser.eventType == XmlPullParser.START_TAG &&
-                parser.name == "string" &&
-                parser.getAttributeValue(null, "name") ==
-                "historial_recorridos"
-            ) {
-                return JSONArray(parser.nextText())
+        val inicio = etiqueta.range.last + 1
+        val final = xml.indexOf("</string>", inicio)
+
+        if (final < 0) {
+            throw Exception("El contenido del historial está incompleto")
+        }
+
+        val contenido = xml.substring(inicio, final)
+
+        val json = decodificarEntidadesXml(contenido).trim()
+
+        if (json.isEmpty()) {
+            return JSONArray()
+        }
+
+        return try {
+            JSONArray(json)
+        } catch (e: Exception) {
+            throw Exception(
+                "Se encontró el historial, pero no se pudo interpretar: ${e.message}"
+            )
+        }
+    }
+
+    // DECODIFICAR ENTIDADES XML CONOCIDAS
+
+    private fun decodificarEntidadesXml(texto: String): String {
+
+        var resultado = Regex(
+            "&(amp|lt|gt|quot|apos);",
+            RegexOption.IGNORE_CASE
+        ).replace(texto) { coincidencia ->
+
+            when (coincidencia.groupValues[1].lowercase(Locale.ROOT)) {
+                "amp" -> "&"
+                "lt" -> "<"
+                "gt" -> ">"
+                "quot" -> "\""
+                "apos" -> "'"
+                else -> coincidencia.value
             }
         }
 
-        throw Exception("No se encontró el historial en el XML")
+        resultado = Regex(
+            "&#(x[0-9a-fA-F]+|[0-9]+);"
+        ).replace(resultado) { coincidencia ->
+
+            try {
+                val numero = coincidencia.groupValues[1]
+
+                val codigo = if (numero.startsWith("x")) {
+                    numero.substring(1).toInt(16)
+                } else {
+                    numero.toInt()
+                }
+
+                String(Character.toChars(codigo))
+
+            } catch (e: Exception) {
+                coincidencia.value
+            }
+        }
+
+        return resultado
     }
+
 
     // IDENTIFICAR RECORRIDOS REPETIDOS
 
